@@ -2,7 +2,7 @@
 set -xe
 
 # Define variables
-S3_BUCKET="s3://devsecops-artifacts-yourname23"
+S3_BUCKET="s3://my-github-codedeploy-artifacts "
 TOMCAT_WEBAPP="/usr/local/tomcat9/webapps"
 
 # Copy WAR file from S3 bucket to Tomcat webapps folder
