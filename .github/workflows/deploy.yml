@@ -9,7 +9,7 @@ on:
 env:
   applicationfolder: spring-boot-hello-world-example
   AWS_REGION: us-east-1
-  S3BUCKET: devsecops-artifacts-yourname23
+  S3BUCKET: my-github-codedeploy-artifacts
 
 
 jobs:
