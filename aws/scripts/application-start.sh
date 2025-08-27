@@ -14,10 +14,11 @@ chown -R tomcat:tomcat /usr/local/tomcat
 # Health check with retries
 NUMBER_OF_ATTEMPTS=20
 SLEEP_TIME=5
+APP_URL="http://localhost:8080/index.jsp"   # 👈 Update this to your app context (e.g., /myapp/)
 
 for i in `seq 1 $NUMBER_OF_ATTEMPTS`; do
-    HTTP_CODE=$(curl --insecure --write-out '%{http_code}' -o /dev/null -m 10 -q -s http://localhost:8080)
-    if [ "$HTTP_CODE" == "200" ]; then
+    HTTP_CODE=$(curl --insecure --write-out '%{http_code}' -o /dev/null -m 10 -q -s "$APP_URL")
+    if [ "$HTTP_CODE" -eq 200 ]; then
         echo "Tomcat is running and returned 200!"
         exit 0
     fi
