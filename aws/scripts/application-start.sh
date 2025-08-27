@@ -9,7 +9,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 chown -R tomcat:tomcat /usr/local/tomcat9
 
 # Start Tomcat
-/usr/local/tomcat9/bin/catalina.sh start
+/usr/local/tomcat/bin/catalina.sh start
 
 # Optional: wait and check if Tomcat is running
 sleep 10
