@@ -1,13 +1,15 @@
 #!/bin/bash
 set -xe
 
-# Define variables
-S3_BUCKET="s3://my-codedeploy-artifacts-1"
-TOMCAT_WEBAPP="/usr/local/tomcat9/webapps"
+# Variables
+S3_BUCKET="s3://my-codedeploy-artifacts-1"   # Your exact bucket
+TOMCAT_WEBAPP="/opt/tomcat/webapps"
 
-# Copy WAR file from S3 bucket to Tomcat webapps folder
-# If you know the exact WAR file name, you can specify it instead of --recursive
+# Copy all files from S3 bucket recursively to Tomcat webapps
 aws s3 cp $S3_BUCKET $TOMCAT_WEBAPP --recursive --region us-east-1
 
-# Ensure the ownership permissions are correct
+# Ensure proper ownership
 chown -R tomcat:tomcat $TOMCAT_WEBAPP
+
+# Restart Tomcat to deploy new WARs
+systemctl restart tomcat
