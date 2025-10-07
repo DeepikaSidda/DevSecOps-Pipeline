@@ -8,7 +8,7 @@ on:
 env:
   applicationfolder: spring-boot-hello-world-example
   AWS_REGION: us-east-1
-  S3BUCKET: my-codedeploy-artifacts-1 # update this bucket name 
+  S3BUCKET: my-codedeploy-artifacts-1 # update this bucket name
   S3bucket_CodeGuru: codeguru-reviewer-21 # update this bucket name
 
 jobs:
@@ -19,10 +19,11 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v2
-        name: Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v2
 
-      - uses: aws-actions/configure-aws-credentials@v1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ secrets.IAMROLE_GITHUB }}
           role-session-name: GitHubActionsRole
@@ -37,19 +38,18 @@ jobs:
         run: chmod -R +x ./.github
 
       - name: Build and Package Maven
-        id: package
         working-directory: ${{ env.applicationfolder }}
         run: $GITHUB_WORKSPACE/.github/scripts/build.sh
+
+      - name: Upload Source for CodeScan
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-file
+          path: ${{ env.applicationfolder }} # Upload entire source folder
 
       - name: Upload Artifact to S3
         working-directory: ${{ env.applicationfolder }}/target
         run: aws s3 cp *.war s3://${{ env.S3BUCKET }}/
-      
-      - name: Upload Artifact for CodeScan
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-file
-          path: ${{ env.applicationfolder }}/target/*.war
 
   codescan:
     name: CodeGuru Reviewer Scan
@@ -59,9 +59,8 @@ jobs:
       id-token: write
       contents: read
       security-events: write
-
     steps:
-      - name: Download Build Artifact
+      - name: Download Source Artifact
         uses: actions/download-artifact@v4
         with:
           name: build-file
@@ -75,18 +74,13 @@ jobs:
           role-session-name: GitHubActionsRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: actions/checkout@v2
-        if: steps.iam-role.outcome == 'success'
-        with:
-          fetch-depth: 0
-
       - name: Run CodeGuru Reviewer
         uses: aws-actions/codeguru-reviewer@v1.1
         if: ${{ always() }}
         continue-on-error: false
         with:
           s3_bucket: ${{ env.S3bucket_CodeGuru }}
-          build_path: .
+          build_path: . # scans the downloaded source code
 
       - name: Store SARIF file
         if: steps.iam-role.outcome == 'success'
@@ -116,7 +110,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-
     steps:
       - uses: actions/checkout@v2
 
