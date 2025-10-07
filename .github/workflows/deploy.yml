@@ -8,8 +8,8 @@ on:
 env:
   applicationfolder: spring-boot-hello-world-example
   AWS_REGION: us-east-1
-  S3BUCKET: my-codedeploy-artifacts-1 # update this bucket name
-  S3bucket_CodeGuru: codeguru-reviewer-21 # update this bucket name
+  S3BUCKET: my-codedeploy-artifacts-1       # update this bucket name
+  S3bucket_CodeGuru: codeguru-reviewer-21   # update this bucket name
 
 jobs:
   build:
@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0   # important for CodeGuru to see full Git history
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -41,12 +43,6 @@ jobs:
         working-directory: ${{ env.applicationfolder }}
         run: $GITHUB_WORKSPACE/.github/scripts/build.sh
 
-      - name: Upload Source for CodeScan
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-file
-          path: ${{ env.applicationfolder }} # Upload entire source folder
-
       - name: Upload Artifact to S3
         working-directory: ${{ env.applicationfolder }}/target
         run: aws s3 cp *.war s3://${{ env.S3BUCKET }}/
@@ -60,14 +56,12 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Download Source Artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout Repository for CodeGuru
+        uses: actions/checkout@v2
         with:
-          name: build-file
+          fetch-depth: 0   # Full Git history required
 
       - name: Configure AWS Credentials
-        id: iam-role
-        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ secrets.IAMROLE_GITHUB }}
@@ -76,14 +70,11 @@ jobs:
 
       - name: Run CodeGuru Reviewer
         uses: aws-actions/codeguru-reviewer@v1.1
-        if: ${{ always() }}
-        continue-on-error: false
         with:
           s3_bucket: ${{ env.S3bucket_CodeGuru }}
-          build_path: . # scans the downloaded source code
+          build_path: ./  # root folder with .git
 
       - name: Store SARIF file
-        if: steps.iam-role.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: SARIF_recommendations
@@ -94,9 +85,10 @@ jobs:
         with:
           sarif_file: codeguru-results.sarif.json
 
-      - run: |
+      - name: Fail on Critical Vulnerabilities
+        run: |
           echo "Checking for critical vulnerabilities..."
-          count=$(cat codeguru-results.sarif.json | jq '.runs[].results[] | select(.level == "error") | .level' | wc -l)
+          count=$(jq '.runs[].results[] | select(.level == "error") | .level' codeguru-results.sarif.json | wc -l)
           if (( $count > 0 )); then
             echo "There are $count critical findings, stopping the pipeline."
             exit 1
@@ -119,8 +111,9 @@ jobs:
           role-session-name: GitHubActionsRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - run: |
-          echo "Deploying branch ${{ env.GITHUB_REF }} to environment: Dev"
+      - name: Deploy Application
+        run: |
+          echo "Deploying branch ${{ github.ref }} to environment: Dev"
           commit_hash=$(git rev-parse HEAD)
           aws deploy create-deployment \
             --application-name MyWebApp \
