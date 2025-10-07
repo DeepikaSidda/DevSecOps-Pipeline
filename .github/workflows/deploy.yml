@@ -1,7 +1,6 @@
-name: Build and Deploy
+name: Build, Scan, and Deploy
 
 on:
-  #workflow_dispatch: {}
   push:
     branches: [ main ]
   pull_request:
@@ -9,8 +8,8 @@ on:
 env:
   applicationfolder: spring-boot-hello-world-example
   AWS_REGION: us-east-1
-  S3BUCKET: my-codedeploy-artifacts-1
-
+  S3BUCKET: my-codedeploy-artifacts-1 # update this bucket name 
+  S3bucket_CodeGuru: codeguru-reviewer-21 # update this bucket name
 
 jobs:
   build:
@@ -24,7 +23,7 @@ jobs:
         name: Checkout Repository
 
       - uses: aws-actions/configure-aws-credentials@v1
-        with: 
+        with:
           role-to-assume: ${{ secrets.IAMROLE_GITHUB }}
           role-session-name: GitHubActionsRole
           aws-region: ${{ env.AWS_REGION }}
@@ -42,25 +41,96 @@ jobs:
         working-directory: ${{ env.applicationfolder }}
         run: $GITHUB_WORKSPACE/.github/scripts/build.sh
 
-      - name: Upload Artifact to s3
+      - name: Upload Artifact to S3
         working-directory: ${{ env.applicationfolder }}/target
         run: aws s3 cp *.war s3://${{ env.S3BUCKET }}/
-        
-  deploy:
+      
+      - name: Upload Artifact for CodeScan
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-file
+          path: ${{ env.applicationfolder }}/target/*.war
+
+  codescan:
+    name: CodeGuru Reviewer Scan
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build-file
+
+      - name: Configure AWS Credentials
+        id: iam-role
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.IAMROLE_GITHUB }}
+          role-session-name: GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/checkout@v2
+        if: steps.iam-role.outcome == 'success'
+        with:
+          fetch-depth: 0
+
+      - name: Run CodeGuru Reviewer
+        uses: aws-actions/codeguru-reviewer@v1.1
+        if: ${{ always() }}
+        continue-on-error: false
+        with:
+          s3_bucket: ${{ env.S3bucket_CodeGuru }}
+          build_path: .
+
+      - name: Store SARIF file
+        if: steps.iam-role.outcome == 'success'
+        uses: actions/upload-artifact@v2
+        with:
+          name: SARIF_recommendations
+          path: ./codeguru-results.sarif.json
+
+      - name: Upload Review Results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: codeguru-results.sarif.json
+
+      - run: |
+          echo "Checking for critical vulnerabilities..."
+          count=$(cat codeguru-results.sarif.json | jq '.runs[].results[] | select(.level == "error") | .level' | wc -l)
+          if (( $count > 0 )); then
+            echo "There are $count critical findings, stopping the pipeline."
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to EC2
+    needs: codescan
     runs-on: ubuntu-latest
     environment: Dev
     permissions:
       id-token: write
       contents: read
+
     steps:
-    - uses: actions/checkout@v2
-    - uses: aws-actions/configure-aws-credentials@v1
-      with:
-        role-to-assume: ${{ secrets.IAMROLE_GITHUB }}
-        role-session-name: GitHubActionsRole
-        aws-region: ${{ env.AWS_REGION }}
-    - run: |
-        echo "Deploying branch ${{ env.GITHUB_REF }} to ${{ github.event.inputs.environment }}"
-        commit_hash=`git rev-parse HEAD`
-        aws deploy create-deployment --application-name MyWebApp --deployment-group-name MyWebAppDG --github-location repository=$GITHUB_REPOSITORY,commitId=$commit_hash --ignore-application-stop-failures
+      - uses: actions/checkout@v2
+
+      - uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.IAMROLE_GITHUB }}
+          role-session-name: GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - run: |
+          echo "Deploying branch ${{ env.GITHUB_REF }} to environment: Dev"
+          commit_hash=$(git rev-parse HEAD)
+          aws deploy create-deployment \
+            --application-name MyWebApp \
+            --deployment-group-name MyWebAppDG \
+            --github-location repository=$GITHUB_REPOSITORY,commitId=$commit_hash \
+            --ignore-application-stop-failures
