@@ -46,7 +46,7 @@ jobs:
         run: aws s3 cp *.war s3://${{ env.S3BUCKET }}/
       
       - name: Upload Artifact for CodeScan
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: build-file
           path: ${{ env.applicationfolder }}/target/*.war
@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Download Build Artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: build-file
 
